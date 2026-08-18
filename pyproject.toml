@@ -5,3 +5,6 @@ description = ""
 authors = ["Your Name <you@example.com>"]
 requires-python = ">=3.11"
 dependencies = []
+[tool.poetry.dependencies]
+python = "^3.11"
+flask = "^2.3.3"  # або найновіша версія
