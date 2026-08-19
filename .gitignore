@@ -124,6 +124,8 @@ temp/
 logs/
 *.pid
 pdx_tools.db
+feedback.db
+stats.db
 
 # Environments
 .env
