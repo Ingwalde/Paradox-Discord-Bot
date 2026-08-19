@@ -119,6 +119,12 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Bot runtime artifacts
+temp/
+logs/
+*.pid
+pdx_tools.db
+
 # Environments
 .env
 .venv
