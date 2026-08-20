@@ -24,6 +24,7 @@ from paradox_bot.feedback import (
 )
 from paradox_bot.games import GAMES, GameInfo
 from paradox_bot.search import search_pages_async, suggest_similar_async
+from paradox_bot.web import KeepAliveServer
 
 logger = logging.getLogger(__name__)
 
@@ -84,17 +85,52 @@ class PaginatedResultsView(ui.View):
     settings.search_max_results, settings.search_result_limit per page).
     """
 
-    def __init__(self, pages: list[dict[str, Any]], game: GameInfo) -> None:
-        super().__init__(timeout=300)
+    def __init__(self, pages: list[dict[str, Any]], game: GameInfo, author_id: int) -> None:
+        super().__init__(timeout=settings.view_timeout_seconds)
         self.pages = pages
         self.game = game
+        self.author_id = author_id
         self.page_size = settings.search_result_limit
         self.index = 0
+        # Set by send_wiki_embed once the message exists, so on_timeout can
+        # edit the buttons out. None if sending failed.
+        self.message: discord.Message | None = None
         self._render()
 
     @property
     def total_pages(self) -> int:
         return (len(self.pages) - 1) // self.page_size + 1
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Only whoever ran the search may page through it.
+
+        Without this, anyone in the channel can advance someone else's results
+        and the message changes under them.
+        """
+        if interaction.user.id == self.author_id:
+            return True
+        await interaction.response.send_message(
+            "↔️ Це чужий пошук. Запустіть власний, щоб гортати.", ephemeral=True
+        )
+        return False
+
+    async def on_timeout(self) -> None:
+        """Disable the buttons rather than leave them looking clickable.
+
+        Discord does not retire a view's components on its own: after the
+        timeout they still render enabled and a click answers "interaction
+        failed".
+        """
+        for item in self.children:
+            if isinstance(item, ui.Button) and item.url is None:
+                item.disabled = True
+        if self.message is None:
+            return
+        try:
+            await self.message.edit(view=self)
+        except discord.HTTPException:
+            # Message deleted, or we lost access to the channel. Nothing to fix.
+            logger.debug("Could not disable timed-out view", exc_info=True)
 
     def _current_slice(self) -> list[dict[str, Any]]:
         start = self.index * self.page_size
@@ -162,7 +198,18 @@ class ParadoxBot(commands.Bot):
             case_insensitive=True,
         )
         self.started_at = datetime.now(UTC)
+        self.keep_alive = KeepAliveServer()
         self._register_game_commands()
+
+    async def close(self) -> None:
+        """Stop the health endpoint before the gateway connection goes away.
+
+        Ordering matters under `docker stop`: the health endpoint must stop
+        answering while we are shutting down, not keep reporting healthy for a
+        bot that is on its way out.
+        """
+        await self.keep_alive.stop()
+        await super().close()
 
     def _register_game_commands(self) -> None:
         """Register one prefix command per game.
@@ -201,6 +248,8 @@ class ParadoxBot(commands.Bot):
         await self.add_cog(HelpCog(self))
         await self.add_cog(ExtrasCog(self))
         self.tree.add_command(AdminGroup(self))
+
+        await self.keep_alive.start()
 
         if settings.dev_guild_id:
             guild = discord.Object(id=settings.dev_guild_id)
@@ -294,7 +343,7 @@ async def send_wiki_embed(
 
     view: ui.View | None = None
     if pages:
-        results_view = PaginatedResultsView(pages, game)
+        results_view = PaginatedResultsView(pages, game, author_id=ctx.author.id)
         embed = results_view.build_embed()
         view = results_view
     else:
@@ -320,6 +369,8 @@ async def send_wiki_embed(
         embed.set_footer(text=f"{game.name} Wiki")
 
     msg = await ctx.send(embed=embed, view=view) if view else await ctx.send(embed=embed)
+    if isinstance(view, PaginatedResultsView):
+        view.message = msg
     _remember_search_context(
         msg.id,
         game_key=game_key,

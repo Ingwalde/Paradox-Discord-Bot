@@ -33,6 +33,21 @@ WORKDIR /app
 # Only the installed packages come across — no pip cache, no build wheels.
 COPY --from=builder /install /usr/local
 
+# The base image's own build tooling is what Trivy flags, not our dependencies:
+# CVE-2025-47273 in setuptools 70.3.0, and GHSA-6v7p-g79w-8964 in the msgpack
+# copy vendored inside pip. Neither runs once the bot is started.
+#
+# setuptools is upgraded rather than removed because pkg_resources still gets
+# imported by the occasional library. pip is deleted outright — nothing imports
+# it at runtime, and deleting is what actually clears the vendored msgpack,
+# which upgrading pip would not, since the latest release still vendors it.
+# The glob means a base-image bump that moves the path removes nothing and
+# Trivy fails again rather than passing on a false assumption.
+RUN python -m pip install --no-cache-dir --upgrade "setuptools>=78.1.1" \
+    && rm -rf /usr/local/lib/python3.*/site-packages/pip \
+              /usr/local/lib/python3.*/site-packages/pip-*.dist-info \
+              /usr/local/bin/pip /usr/local/bin/pip3*
+
 COPY . .
 
 # data/ holds the runtime SQLite files (uploads, feedback, stats) and is a

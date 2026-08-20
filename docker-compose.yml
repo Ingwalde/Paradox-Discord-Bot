@@ -8,7 +8,7 @@ services:
     # Deploy sets IMAGE_TAG to sha-<commit> so the server runs the exact image
     # CI validated. Unset — local `docker compose up --build` — it falls back
     # to :latest.
-    image: ghcr.io/ingwalde/paradox-discord-bot:${IMAGE_TAG:-latest}
+    image: ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG:-latest}
     container_name: paradox-wiki-bot
     restart: unless-stopped
     env_file:

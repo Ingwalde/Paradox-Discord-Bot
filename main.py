@@ -1,4 +1,4 @@
-"""Entrypoint: wires up the bot and keep-alive server, then runs them.
+"""Entrypoint: runs the bot and shuts it down cleanly on a signal.
 
 Users run `-eu4 <query>` (and the same for the other games) and get an embed
 with the best matching wiki pages. Save files can be pushed to pdx.tools via
@@ -8,13 +8,43 @@ for the actual implementation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import signal
 
 from paradox_bot.bot import ParadoxBot
 from paradox_bot.config import settings
-from paradox_bot.web import keep_alive
 
 logger = logging.getLogger(__name__)
+
+
+async def run_bot() -> None:
+    """Start the bot and close it on SIGINT/SIGTERM.
+
+    `docker stop` sends SIGTERM and waits nine seconds before SIGKILL, and
+    deploys restart the container on every merge. Without a handler the process
+    dies where it stands, which can be in the middle of a SQLite write. Closing
+    the bot makes `start()` return, and `async with` then runs the cleanup —
+    including stopping the health endpoint, in ParadoxBot.close().
+    """
+    bot = ParadoxBot()
+    loop = asyncio.get_running_loop()
+
+    def request_stop(signal_name: str) -> None:
+        logger.info("%s received, shutting down", signal_name)
+        loop.create_task(bot.close())
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, request_stop, sig.name)
+        except NotImplementedError:
+            # Windows has no add_signal_handler; Ctrl+C still raises
+            # KeyboardInterrupt out of asyncio.run, which is good enough for
+            # local development. Production is Linux.
+            logger.debug("Signal handler for %s unavailable on this platform", sig.name)
+
+    async with bot:
+        await bot.start(settings.token)
 
 
 def main() -> None:
@@ -22,9 +52,10 @@ def main() -> None:
         logger.critical("TOKEN is not set; copy .env.example to .env and fill it in")
         raise SystemExit(1)
 
-    keep_alive()
-    bot = ParadoxBot()
-    bot.run(settings.token, log_handler=None)
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        logger.info("Interrupted, shutting down")
 
 
 if __name__ == "__main__":

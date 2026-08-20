@@ -13,7 +13,7 @@ version; there are no backports.
 ## Reporting a vulnerability
 
 Use GitHub's private reporting: **[Security → Report a
-vulnerability](https://github.com/Ingwalde/Paradox-Discord-Bot/security/advisories/new)**.
+vulnerability](https://github.com/Ingwalde/Paradox-Wiki-Bot/security/advisories/new)**.
 That opens a private thread visible only to the maintainer, so the issue is not
 public while it is being fixed.
 

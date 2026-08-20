@@ -1,19 +1,28 @@
 [project]
-name = "paradox-discord-bot"
-version = "0.1.0"
+name = "paradox-wiki-bot"
+version = "0.2.0"
 description = "Discord bot that searches Ukrainian Paradox game wikis"
+authors = [{ name = "Ingwalde" }]
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "discord.py>=2.4,<3.0",
     "python-dotenv>=1.0,<2.0",
-    "flask>=3.0,<4.0",
     "aiohttp>=3.9,<4.0",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.pytest.ini_options]
+# The package is not installed into the environment, and tests/ has no
+# __init__.py, so pytest puts tests/ on sys.path rather than the repo root.
+# `python -m pytest` happens to work anyway because it prepends the working
+# directory; bare `pytest`, which is what CI runs, does not. Setting this makes
+# both invocations resolve `paradox_bot` the same way.
+pythonpath = ["."]
+testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["paradox_bot"]

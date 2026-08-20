@@ -5,23 +5,14 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from paradox_bot import storage
 from paradox_bot.config import settings
 
 
 def record_search(game_key: str, query: str) -> None:
     """Log a search. Blocking; call via asyncio.to_thread."""
-    conn = sqlite3.connect(settings.stats_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.stats_db_path, storage.SEARCH_LOG_SCHEMA)
     try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS SearchLog (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                game_key TEXT,
-                query TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
         conn.execute(
             "INSERT INTO SearchLog (game_key, query) VALUES (?, ?)",
             (game_key, query),
@@ -36,7 +27,7 @@ def trending(game_key: str, days: int = 7, limit: int = 5) -> list[dict[str, Any
 
     Blocking; call via asyncio.to_thread.
     """
-    conn = sqlite3.connect(settings.stats_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.stats_db_path, storage.SEARCH_LOG_SCHEMA)
     try:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
@@ -52,7 +43,8 @@ def trending(game_key: str, days: int = 7, limit: int = 5) -> list[dict[str, Any
         )
         return [dict(row) for row in cursor.fetchall()]
     except sqlite3.OperationalError:
-        # SearchLog table doesn't exist yet: nothing has ever been recorded.
+        # Reachable only if the file was removed after this process cached its
+        # schema as applied; storage.connect() creates the table otherwise.
         return []
     finally:
         conn.close()
