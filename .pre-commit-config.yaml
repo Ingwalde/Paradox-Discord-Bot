@@ -12,6 +12,12 @@ repos:
     rev: v1.20.2
     hooks:
       - id: mypy
+        # The checked set lives in [tool.mypy] files in pyproject.toml. The
+        # hook must not pass filenames of its own, or mypy resolves a staged
+        # tests/*.py both as a bare module and as tests.<name> (imported by
+        # other test files) and refuses with "found twice under different
+        # module names".
+        pass_filenames: false
         additional_dependencies:
           - discord.py>=2.4,<3.0
           - aiohttp>=3.9,<4.0

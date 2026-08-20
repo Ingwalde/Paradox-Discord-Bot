@@ -4,7 +4,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
 ![mypy](https://img.shields.io/badge/mypy-checked-2A6DB2)
-![Coverage](https://img.shields.io/badge/coverage-38%25*-yellow)
+![Coverage](https://img.shields.io/badge/coverage-46%25*-yellow)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 Discord-бот з українським інтерфейсом для пошуку сторінок Paradox-вікі
@@ -178,17 +178,19 @@ pytest -q --cov=paradox_bot --cov-report=term-missing
 ```
 
 79 тестів проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
-`stats.py`, `config.py`) і проти реального локального `aiohttp`-сервера для
-`-tools`-аплоаду. \* Coverage-бейдж (38%) — по всьому пакету; Discord-специфічний
-шар (`bot.py`, `cogs/`, `web.py`) свідомо не тестується (мокати Discord —
-дорого й крихко), а логіка під ним покрита на 91–100%:
+`stats.py`, `config.py`, плюс `build_links_field` та ліміти команд у `bot.py`)
+і проти реального локального `aiohttp`-сервера для `-tools`-аплоаду.
+\* Coverage-бейдж (46%) — по всьому пакету; більшість Discord-специфічного
+шару (`cogs/`, `web.py`, event-хендлери в `bot.py`) свідомо не тестується
+(мокати Discord — дорого й крихко), а логіка під ним покрита на 91–100%:
 
 | Модуль | Покриття |
 |---|---|
 | `config.py`, `feedback.py`, `games.py`, `stats.py` | 100% |
 | `search.py` | 96% |
 | `pdx_tools.py` | 91% |
-| `bot.py`, `cogs/*`, `web.py` | 0% (навмисно) |
+| `bot.py` | 30% (чисті хелпери; event-хендлери й Discord-виклики — ні) |
+| `cogs/*`, `web.py` | 0% (навмисно) |
 
 pre-commit (`pre-commit install`): ruff, mypy, `detect-private-key`,
 `check-added-large-files`.
