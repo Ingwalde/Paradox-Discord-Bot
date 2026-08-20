@@ -27,6 +27,12 @@ class ToolsCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name="tools", help="Завантажити сейв на pdx.tools")
+    @commands.max_concurrency(1, commands.BucketType.user)
+    @commands.cooldown(
+        settings.upload_cooldown_uses,
+        settings.upload_cooldown_seconds,
+        commands.BucketType.user,
+    )
     async def tools(self, ctx: commands.Context) -> None:
         """Take a save file attachment and upload it to pdx.tools."""
         if not (settings.pdx_tools_user_id and settings.pdx_tools_api_key):

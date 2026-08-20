@@ -89,6 +89,13 @@ class Settings:
     max_query_length: int = 100
     db_timeout_seconds: float = 5.0
 
+    # Discord rejects an embed field value longer than this.
+    embed_field_limit: int = 1024
+    search_cooldown_uses: int = 4
+    search_cooldown_seconds: float = 10.0
+    upload_cooldown_uses: int = 1
+    upload_cooldown_seconds: float = 60.0
+
     upload_db_path: Path = field(default_factory=lambda: Path("pdx_tools.db"))
     feedback_db_path: Path = field(default_factory=lambda: Path("feedback.db"))
     stats_db_path: Path = field(default_factory=lambda: Path("stats.db"))

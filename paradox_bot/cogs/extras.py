@@ -46,6 +46,11 @@ class ExtrasCog(commands.Cog):
         self.daily_fact.cancel()
 
     @commands.command(name="random", help="Випадкова стаття з вікі")
+    @commands.cooldown(
+        settings.search_cooldown_uses,
+        settings.search_cooldown_seconds,
+        commands.BucketType.user,
+    )
     async def random_command(self, ctx: commands.Context, game_key: str) -> None:
         game_key = game_key.lower()
         if game_key not in GAMES:
@@ -66,6 +71,11 @@ class ExtrasCog(commands.Cog):
         await ctx.send(embed=_build_page_embed(page, game_key, "🎲 Випадкова стаття"))
 
     @commands.command(name="trending", help="Топ запитів за останній тиждень")
+    @commands.cooldown(
+        settings.search_cooldown_uses,
+        settings.search_cooldown_seconds,
+        commands.BucketType.user,
+    )
     async def trending_command(self, ctx: commands.Context, game_key: str) -> None:
         game_key = game_key.lower()
         if game_key not in GAMES:

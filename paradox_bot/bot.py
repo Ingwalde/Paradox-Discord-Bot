@@ -28,6 +28,24 @@ from paradox_bot.search import search_pages_async, suggest_similar_async
 logger = logging.getLogger(__name__)
 
 
+def build_links_field(pages: Iterable[dict[str, Any]]) -> str:
+    """Render result links, dropping any that would overflow the field limit.
+
+    Long mod subpage titles can push a full page of results past Discord's
+    1024-character field cap, which would fail the whole message with 400.
+    """
+    lines: list[str] = []
+    used = 0
+    for page in pages:
+        line = f"[{page['title']}]({page['url']})"
+        cost = len(line) + (1 if lines else 0)  # the newline that joins it
+        if used + cost > settings.embed_field_limit:
+            break
+        lines.append(line)
+        used += cost
+    return "\n".join(lines)
+
+
 class LinksView(ui.View):
     """Row of link buttons for a short, non-paginated list (fuzzy suggestions)."""
 
@@ -108,8 +126,9 @@ class PaginatedResultsView(ui.View):
         # it again here would be the third copy of the same link.
         rest = chunk[1:]
         if rest:
-            links_text = "\n".join(f"[{p['title']}]({p['url']})" for p in rest)
-            embed.add_field(name="🔗 Ще результати", value=links_text, inline=False)
+            links_text = build_links_field(rest)
+            if links_text:
+                embed.add_field(name="🔗 Ще результати", value=links_text, inline=False)
         page_note = (
             f" · стор. {self.index + 1}/{self.total_pages}" if self.total_pages > 1 else ""
         )
@@ -134,7 +153,14 @@ class ParadoxBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
-        super().__init__(command_prefix=settings.bot_prefix, intents=intents, help_command=None)
+        super().__init__(
+            command_prefix=settings.bot_prefix,
+            intents=intents,
+            help_command=None,
+            # Without this, -EU4 raises CommandNotFound and is swallowed
+            # silently, so anything but lowercase looks like a dead bot.
+            case_insensitive=True,
+        )
         self.started_at = datetime.now(UTC)
         self._register_game_commands()
 
@@ -153,6 +179,11 @@ class ParadoxBot(commands.Bot):
         for key, game in GAMES.items():
 
             def make_command(game_key: str):
+                @commands.cooldown(
+                    settings.search_cooldown_uses,
+                    settings.search_cooldown_seconds,
+                    commands.BucketType.user,
+                )
                 async def game_command(ctx: commands.Context, *, query: str) -> None:
                     await send_wiki_embed(self, ctx, game_key, query)
 
@@ -189,6 +220,9 @@ class ParadoxBot(commands.Bot):
             return
         if isinstance(error, commands.CommandOnCooldown):
             await ctx.send(f"⏳ Зачекайте {error.retry_after:.0f} с перед наступним запитом.")
+            return
+        if isinstance(error, commands.MaxConcurrencyReached):
+            await ctx.send("⏳ Попереднє завантаження ще триває. Завершіть його спершу.")
             return
 
         original = getattr(error, "original", error)
@@ -277,8 +311,11 @@ async def send_wiki_embed(
             logger.exception("Fuzzy suggestion lookup failed for %s: %r", game_key, query)
             suggestions = []
         if suggestions:
-            links_text = "\n".join(f"[{p['title']}]({p['url']})" for p in suggestions)
-            embed.add_field(name="🔎 Можливо ви мали на увазі", value=links_text, inline=False)
+            links_text = build_links_field(suggestions)
+            if links_text:
+                embed.add_field(
+                    name="🔎 Можливо ви мали на увазі", value=links_text, inline=False
+                )
             view = LinksView(suggestions)
         embed.set_footer(text=f"{game.name} Wiki")
 
