@@ -8,7 +8,8 @@ repos:
         args: [--fix]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+    # Must match mypy in requirements-dev.txt exactly; see the note there.
+    rev: v1.20.2
     hooks:
       - id: mypy
         additional_dependencies:
