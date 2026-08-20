@@ -162,6 +162,10 @@ MediaWiki Action API (`https://<game>.paradoxwikis.com/api.php`) анонімн�
 Наповнюються через `python scripts/import_wiki.py <гра>` (MediaWiki Action
 API, без ключа). Безпечно перезапускати — таблиці перебудовуються з нуля.
 
+Пошук сканує таблиці цілком: `LIKE '%запит%'` має провідний `%`, який жоден
+B-tree індекс обслужити не може. На ~2000 рядків це ≈3 мс у робочому потоці.
+Плани щодо індексованої нормалізованої колонки — у [ROADMAP.md](ROADMAP.md).
+
 ⚠️ Колонка `lang` недостовірна (значна частина рядків позначена як
 «Українська», хоча веде на англійські сторінки) і пошуком не читається.
 
@@ -173,7 +177,7 @@ mypy
 pytest -q --cov=paradox_bot --cov-report=term-missing
 ```
 
-65 тестів проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
+79 тестів проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
 `stats.py`, `config.py`) і проти реального локального `aiohttp`-сервера для
 `-tools`-аплоаду. \* Coverage-бейдж (38%) — по всьому пакету; Discord-специфічний
 шар (`bot.py`, `cogs/`, `web.py`) свідомо не тестується (мокати Discord —
@@ -188,6 +192,23 @@ pytest -q --cov=paradox_bot --cov-report=term-missing
 
 pre-commit (`pre-commit install`): ruff, mypy, `detect-private-key`,
 `check-added-large-files`.
+
+## Деплой на Replit
+
+⚠️ **Тільки Reserved VM.** Бот тримає постійне gateway-з'єднання з Discord і
+**ніколи не отримує вхідних HTTP-запитів**, тому Autoscale-деплой
+(`deploymentTarget = "cloudrun"`) згортається до нуля і бот іде офлайн.
+Always-On Replit прибрав у січні 2024, тож зарезервований інстанс — єдиний
+спосіб лишатися підключеним.
+
+У Deployments оберіть **Reserved VM** і дайте Replit самому переписати
+`deploymentTarget` у `.replit` — не редагуйте це значення вручну.
+
+Змінні з `.env` задаються в розділі **Secrets**, а не файлом: `.env` у
+`.gitignore` і в деплой не потрапляє.
+
+Keep-alive ендпоінт (`GET /`, `GET /health` на `PORT`) на Reserved VM для
+підтримки життя не потрібен — лишається як health-check.
 
 ## Відомі обмеження
 

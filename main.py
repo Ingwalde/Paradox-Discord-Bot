@@ -9,8 +9,6 @@ for the actual implementation.
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 
 from paradox_bot.bot import ParadoxBot
 from paradox_bot.config import settings
@@ -19,16 +17,11 @@ from paradox_bot.web import keep_alive
 logger = logging.getLogger(__name__)
 
 
-def write_pid(filename: str = "WIKI.pid") -> None:
-    Path(filename).write_text(str(os.getpid()), encoding="utf-8")
-
-
 def main() -> None:
     if not settings.token:
         logger.critical("TOKEN is not set; copy .env.example to .env and fill it in")
         raise SystemExit(1)
 
-    write_pid()
     keep_alive()
     bot = ParadoxBot()
     bot.run(settings.token, log_handler=None)

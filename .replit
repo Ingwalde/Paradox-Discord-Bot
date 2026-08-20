@@ -8,10 +8,19 @@ channel = "stable-24_05"
 language = "python3"
 
 [gitHubImport]
-requiredFiles = [".replit", "replit.nix"]
+# replit.nix is not used: the modules field above replaces it.
+requiredFiles = [".replit"]
 
 [deployment]
+build = ["python3", "-m", "pip", "install", "-r", "requirements.txt"]
 run = ["python3", "main.py"]
+# IMPORTANT: this must be a Reserved VM deployment, not Autoscale.
+# A Discord bot holds a gateway WebSocket and never receives inbound HTTP,
+# so an Autoscale ("cloudrun") deployment scales to zero and the bot drops
+# offline. Replit removed Always-On in January 2024, so a reserved instance
+# is the only way to stay connected. Pick "Reserved VM" in the Deployments
+# UI and let Replit rewrite deploymentTarget below rather than editing it by
+# hand.
 deploymentTarget = "cloudrun"
 
 [[ports]]

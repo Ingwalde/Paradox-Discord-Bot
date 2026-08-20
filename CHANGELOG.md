@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Commands now resolve regardless of case. `-EU4` raised `CommandNotFound`,
+  which the handler swallows by design, so anything but lowercase looked like
+  a dead bot.
+- Rate limiting actually exists. `on_command_error` had a `CommandOnCooldown`
+  branch but no command carried a cooldown, so the branch was unreachable and
+  one user could stream 25 MB uploads back to back. Per-game commands,
+  `-random` and `-trending` allow 4 uses / 10 s; `-tools` allows 1 / 60 s and
+  carries `max_concurrency` so a single user cannot hold several `wait_for`
+  sessions open at once.
+- Result links can no longer overflow Discord's 1024-character embed field
+  and fail the message with 400. Unreachable with today's data (the worst
+  real query renders 737 characters) but the theoretical worst case is 1131
+  for stl and 1076 for hoi4.
+
+### Removed
+- `scripts/add_search_indexes.py`. Its expression indexes were never used:
+  the search filters with `LIKE '%query%'`, whose leading wildcard no B-tree
+  can serve. Query plans with and without them are identical (`SCAN Pages`),
+  timings match, and they added ~217 KB to `eu4.db`. See ROADMAP.md for the
+  stored-column approach that would make indexing work.
+- `write_pid()` and the `WIKI.pid` file it wrote. Nothing read it — a leftover
+  from the earlier Replit setup.
+- `IMPLEMENTATION_PROMPT.md`, superseded by this changelog and ROADMAP.md.
+
+### Changed
+- `.replit` no longer lists a `replit.nix` that does not exist; the `modules`
+  field replaces it. Documented that this bot needs a Reserved VM deployment,
+  since an Autoscale deployment scales to zero and a gateway bot never
+  receives the HTTP request that would wake it.
+
 ## [0.1.0] - 2026-08-19
 
 ### Added
