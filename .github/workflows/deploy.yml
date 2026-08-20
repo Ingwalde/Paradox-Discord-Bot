@@ -1,0 +1,93 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+# Two merges landing close together would otherwise start two deploys against
+# the same server. cancel-in-progress stays false on purpose: a deploy
+# interrupted midway through `up -d` leaves the stack in a worse state than one
+# that waits.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # The commit CI actually validated. Without this, checkout takes
+          # whatever main points at when Deploy runs, so a second merge landing
+          # during the first deploy ships its docker-compose.yml alongside the
+          # earlier commit's image.
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Copy docker-compose.yml to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: docker-compose.yml
+          target: ~/Paradox-Discord-Bot/
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 5m
+          envs: DEPLOY_SHA
+          script: |
+            set -euo pipefail
+            cd ~/Paradox-Discord-Bot
+
+            # Refuse to deploy something we cannot name. An empty DEPLOY_SHA
+            # would silently fall back to :latest — the exact non-determinism
+            # the sha- tags exist to remove.
+            : "${DEPLOY_SHA:?workflow_run did not supply head_sha; refusing to deploy}"
+
+            export IMAGE_TAG="sha-${DEPLOY_SHA}"
+            IMAGE="ghcr.io/ingwalde/paradox-discord-bot:${IMAGE_TAG}"
+            echo "Deploying ${IMAGE}"
+
+            # A stale credential in ~/.docker/config.json makes the daemon send
+            # an expired token instead of pulling anonymously from the public
+            # package, and the registry answers "denied". Drop it first.
+            docker logout ghcr.io || true
+
+            # A failed pull is NOT survivable: compose falls back to the locally
+            # cached image, the old container starts, and the health check below
+            # passes while nothing was actually deployed.
+            if ! docker compose pull; then
+              echo "ERROR: could not pull ${IMAGE}."
+              echo "Refusing to restart — that would relaunch the previous image"
+              echo "and report a successful deploy for code that never shipped."
+              exit 1
+            fi
+
+            docker compose up -d --remove-orphans
+
+            # Confirm the running container is the image we just pulled, not a
+            # survivor of a failed recreate.
+            want=$(docker image inspect "$IMAGE" --format '{{.Id}}')
+            got=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q paradox-bot)")
+            if [ "$want" != "$got" ]; then
+              echo "ERROR: paradox-bot is running $got but the pulled image is $want."
+              exit 1
+            fi
+            echo "Running image matches the pulled digest."

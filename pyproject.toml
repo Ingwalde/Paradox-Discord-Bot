@@ -1,7 +1,8 @@
 [project]
 name = "paradox-discord-bot"
-version = "0.0.2"
+version = "0.1.0"
 description = "Discord bot that searches Ukrainian Paradox game wikis"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "discord.py>=2.4,<3.0",
@@ -13,3 +14,20 @@ dependencies = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.coverage.run]
+source = ["paradox_bot"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.mypy]
+python_version = "3.11"
+files = ["main.py", "paradox_bot", "scripts"]
+# Pragmatic gradual-typing baseline: catch real type errors without demanding
+# full annotations everywhere yet.
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true

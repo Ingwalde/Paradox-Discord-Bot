@@ -1,0 +1,35 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+.coverage.*
+coverage.xml
+htmlcov
+tests
+.vscode
+.idea
+.DS_Store
+data
+logs
+temp
+*.pid
+# Runtime state only. databases/*.db are read-only game content and must ship
+# in the image, so this deliberately does not exclude *.db wholesale.
+pdx_tools.db
+feedback.db
+stats.db
+*.log
+*.zip
+*.tar
+*.tar.gz
