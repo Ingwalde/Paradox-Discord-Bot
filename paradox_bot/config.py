@@ -91,6 +91,8 @@ class Settings:
 
     # Discord rejects an embed field value longer than this.
     embed_field_limit: int = 1024
+    # How long the ◀/▶ buttons stay live before they are disabled.
+    view_timeout_seconds: float = 300.0
     search_cooldown_uses: int = 4
     search_cooldown_seconds: float = 10.0
     upload_cooldown_uses: int = 1

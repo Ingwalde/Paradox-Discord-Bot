@@ -4,9 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased]
+## [0.2.0] - 2026-08-20
+
+The bot now runs correctly as a container: it survives restarts, reports its
+health honestly, and no longer loses data when it is stopped.
 
 ### Added
+- Graceful shutdown. `docker stop` sends SIGTERM and kills the process nine
+  seconds later, and deploys restart the container on every merge. `main.py`
+  now installs SIGINT/SIGTERM handlers that close the bot, so `start()`
+  returns and cleanup runs instead of the process dying where it stands —
+  possibly mid-write to SQLite. Verified by signalling a running instance:
+  the gateway closes, the health port is released, and the double `close()`
+  (signal handler plus `async with`) is absorbed idempotently.
+- `paradox_bot/storage.py`: one connection helper for the three writable
+  databases, enabling `journal_mode=WAL` with `synchronous=NORMAL`. WAL is
+  what makes an abrupt SIGKILL recoverable; the previous rollback journal was
+  not. It also applies each schema once per file per process rather than
+  running `CREATE TABLE IF NOT EXISTS` on every single write.
+- `interaction_check` on the results view: only whoever ran the search can page
+  through it. Anyone in the channel could previously advance someone else's
+  results and change the message under them.
+- `on_timeout` on the results view: the navigation buttons are disabled and the
+  message edited once the view expires. Discord does not retire components on
+  its own, so they used to keep rendering as clickable and answer "interaction
+  failed". Link buttons are left alone — they carry a url and were never
+  interactive.
+- `view_timeout_seconds` in settings, replacing a literal 300.
 - Docker: `deploy/Dockerfile` (multi-stage, non-root, security-updated base),
   `docker-compose.yml` with a health check, and `.dockerignore`. Matches the
   containerisation used in the other repositories here.
@@ -26,6 +50,15 @@ All notable changes to this project will be documented in this file.
   would have silently wiped them on every deploy.
 
 ### Changed
+- The keep-alive endpoint moved from Flask in a background thread to aiohttp in
+  the bot's own event loop. The Docker health check polls this endpoint, and a
+  separate thread kept answering 200 while the event loop was wedged — healthy
+  for a bot that had stopped responding to Discord. Sharing the loop makes an
+  unanswered request mean what the health check assumes it means.
+- Flask dropped from the dependencies. It pulled in six transitive packages
+  (werkzeug, jinja2, click, itsdangerous, markupsafe, blinker) to serve one
+  route returning a fixed string, and `aiohttp` was already a dependency for
+  the pdx.tools upload.
 - Python 3.13 in CI and in the image, up from 3.11. Verified: ruff, mypy and
   all 79 tests pass on 3.13.
 - `ruff` and `mypy` are pinned exactly in `requirements-dev.txt`. They are also

@@ -5,7 +5,7 @@
 ![Docker](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
 ![mypy](https://img.shields.io/badge/mypy-checked-2A6DB2)
-![Coverage](https://img.shields.io/badge/coverage-46%25*-yellow)
+![Coverage](https://img.shields.io/badge/coverage-53%25*-yellow)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 Discord-бот з українським інтерфейсом для пошуку сторінок Paradox-вікі
@@ -35,7 +35,8 @@ Discord (prefix + admin slash) → paradox_bot/bot.py → paradox_bot/search.py 
 | `stats.py` | Лог пошукових запитів для `-trending` |
 | `bot.py` | `ParadoxBot`, динамічна реєстрація команд по іграх, embed-логіка, event-хендлери |
 | `cogs/` | Cog-и для статичних команд: `tools`, `help`, `extras` (`-random`/`-trending`/факт дня), `admin` (slash) |
-| `web.py` | Keep-alive HTTP-ендпоінт (Flask) |
+| `web.py` | Keep-alive/health HTTP-ендпоінт (aiohttp, у тому ж event loop) |
+| `storage.py` | Спільне підключення до записуваних SQLite-баз: WAL + схема |
 
 Динамічні по-ігрові команди (`-eu4`, `-eu5`, …) реєструються напряму на боті,
 не через Cog — вони породжуються цик­лом по `GAMES`, а не декоратором, тож
@@ -147,7 +148,9 @@ MediaWiki Action API (`https://<game>.paradoxwikis.com/api.php`) анонімн�
 | `TOKEN` | так | Токен Discord-бота |
 | `LOG_CHANNEL_ID` | ні | Канал, куди дзеркаляться запити |
 | `DB_DIR` | ні | Каталог з `eu4.db`, `eu5.db`, … (типово `databases`) |
-| `PORT` | ні | Порт keep-alive (типово 8080) |
+| `DATA_DIR` | ні | Де лежать записувані бази (аплоади, фідбек, статистика); у Docker — том |
+| `BOT_PREFIX` | ні | Префікс команд (типово `-`) |
+| `PORT` | ні | Порт keep-alive/health (типово 8080) |
 | `DEV_GUILD_ID` | ні | Сервер для миттєвої синхронізації `/admin` |
 | `DAILY_FACT_CHANNEL_ID` | ні | Канал для щоденного авто-поста (12:00 UTC) |
 | `PDX_TOOLS_USER_ID`, `PDX_TOOLS_API_KEY` | ні | Ключі pdx.tools |
@@ -178,10 +181,10 @@ mypy
 pytest -q --cov=paradox_bot --cov-report=term-missing
 ```
 
-79 тестів проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
+103 тести проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
 `stats.py`, `config.py`, плюс `build_links_field` та ліміти команд у `bot.py`)
 і проти реального локального `aiohttp`-сервера для `-tools`-аплоаду.
-\* Coverage-бейдж (46%) — по всьому пакету; більшість Discord-специфічного
+\* Coverage-бейдж (53%) — по всьому пакету; більшість Discord-специфічного
 шару (`cogs/`, `web.py`, event-хендлери в `bot.py`) свідомо не тестується
 (мокати Discord — дорого й крихко), а логіка під ним покрита на 91–100%:
 
@@ -190,7 +193,8 @@ pytest -q --cov=paradox_bot --cov-report=term-missing
 | `config.py`, `feedback.py`, `games.py`, `stats.py` | 100% |
 | `search.py` | 96% |
 | `pdx_tools.py` | 91% |
-| `bot.py` | 30% (чисті хелпери; event-хендлери й Discord-виклики — ні) |
+| `storage.py`, `web.py` | 100% |
+| `bot.py` | 43% (хелпери й view; event-хендлери й Discord-виклики — ні) |
 | `cogs/*`, `web.py` | 0% (навмисно) |
 
 pre-commit (`pre-commit install`): ruff, mypy, `detect-private-key`,

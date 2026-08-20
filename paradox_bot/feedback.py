@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from paradox_bot import storage
 from paradox_bot.config import settings
 
 FEEDBACK_EMOJIS = {"✅": "up", "❌": "down"}
@@ -41,22 +42,8 @@ def record_feedback(
     top_url: str | None,
 ) -> None:
     """Persist a ✅/❌ vote. Blocking; call via asyncio.to_thread."""
-    conn = sqlite3.connect(settings.feedback_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.feedback_db_path, storage.FEEDBACK_SCHEMA)
     try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS Feedback (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT,
-                game_key TEXT,
-                query TEXT,
-                vote TEXT,
-                top_title TEXT,
-                top_url TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
         conn.execute(
             "INSERT INTO Feedback (user_id, game_key, query, vote, top_title, top_url) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -69,7 +56,7 @@ def record_feedback(
 
 def recent_feedback(limit: int = 10) -> list[dict[str, Any]]:
     """Return the most recent votes, newest first. Blocking; call via asyncio.to_thread."""
-    conn = sqlite3.connect(settings.feedback_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.feedback_db_path, storage.FEEDBACK_SCHEMA)
     try:
         conn.row_factory = sqlite3.Row
         cursor = conn.execute(
@@ -79,7 +66,8 @@ def recent_feedback(limit: int = 10) -> list[dict[str, Any]]:
         )
         return [dict(row) for row in cursor.fetchall()]
     except sqlite3.OperationalError:
-        # Feedback table doesn't exist yet: nothing has ever been recorded.
+        # Reachable only if the file was removed after this process cached its
+        # schema as applied; storage.connect() creates the table otherwise.
         return []
     finally:
         conn.close()

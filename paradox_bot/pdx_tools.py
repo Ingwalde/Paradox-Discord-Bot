@@ -9,6 +9,7 @@ import sqlite3
 
 import aiohttp
 
+from paradox_bot import storage
 from paradox_bot.config import settings
 
 logger = logging.getLogger(__name__)
@@ -105,19 +106,8 @@ async def upload_to_pdx_tools(filename: str, payload: bytes) -> str:
 
 def record_upload(user_id: str, filename: str, url: str) -> None:
     """Persist a successful upload. Blocking; call via asyncio.to_thread."""
-    conn = sqlite3.connect(settings.upload_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.upload_db_path, storage.UPLOADS_SCHEMA)
     try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS Uploads (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT,
-                filename TEXT,
-                url TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
         conn.execute(
             "INSERT INTO Uploads (user_id, filename, url) VALUES (?, ?, ?)",
             (user_id, filename, url),
@@ -134,7 +124,7 @@ def find_prior_upload_url(filename: str) -> str | None:
     the bot recovers the link instead of just saying "already uploaded".
     Blocking; call via asyncio.to_thread.
     """
-    conn = sqlite3.connect(settings.upload_db_path, timeout=settings.db_timeout_seconds)
+    conn = storage.connect(settings.upload_db_path, storage.UPLOADS_SCHEMA)
     try:
         cursor = conn.execute(
             "SELECT url FROM Uploads WHERE filename = ? ORDER BY id DESC LIMIT 1",
