@@ -6,6 +6,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Docker: `deploy/Dockerfile` (multi-stage, non-root, security-updated base),
+  `docker-compose.yml` with a health check, and `.dockerignore`. Matches the
+  containerisation used in the other repositories here.
+- `.github/workflows/deploy.yml`: SSH deploy triggered by a successful CI run
+  on main. Deploys by `sha-<commit>` rather than `:latest`, refuses to continue
+  when the image pull fails, and verifies the running container matches the
+  pulled digest afterwards.
+- CI gained a `pip-audit` gate, `scripts/check_env_example.py`,
+  `scripts/check_version_sync.py`, and an image build scanned by Trivy.
+  Pull requests build and scan without publishing; only main pushes to GHCR.
+- `SECURITY.md` and `.gitattributes`.
+- `.github/dependabot.yml` covering pip, github-actions and pre-commit, with
+  minor and patch updates grouped into one PR.
+- `DATA_DIR` controls where the runtime SQLite files live, so a container can
+  mount one volume and keep uploads, feedback and stats across a redeploy.
+  Previously those paths were fixed relative to the working directory, which
+  would have silently wiped them on every deploy.
+
+### Changed
+- Python 3.13 in CI and in the image, up from 3.11. Verified: ruff, mypy and
+  all 79 tests pass on 3.13.
+- `ruff` and `mypy` are pinned exactly in `requirements-dev.txt`. They are also
+  pinned by rev in `.pre-commit-config.yaml`, and the two had already drifted —
+  pre-commit ran mypy 1.14.1 while CI resolved 1.20.2, so a hook could pass
+  locally and fail in CI.
+- `BOT_PREFIX` and `DATA_DIR` documented in `.env.example`; the new gate fails
+  the build if that drifts again.
+
+### Removed
+- `.replit`. The bot deploys to a VPS by container now; a request-driven
+  platform cannot host a process that holds a gateway connection and never
+  receives inbound HTTP.
+
 ### Fixed
 - Commands now resolve regardless of case. `-EU4` raised `CommandNotFound`,
   which the handler swallows by design, so anything but lowercase looked like

@@ -1,7 +1,8 @@
 # Paradox Discord Bot
 
 [![CI](https://github.com/Ingwalde/Paradox-Discord-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Ingwalde/Paradox-Discord-Bot/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![Docker](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
 ![mypy](https://img.shields.io/badge/mypy-checked-2A6DB2)
 ![Coverage](https://img.shields.io/badge/coverage-46%25*-yellow)
@@ -22,7 +23,7 @@ Discord (prefix + admin slash) → paradox_bot/bot.py → paradox_bot/search.py 
 ## Architecture
 
 Один пакет `paradox_bot/`, розділений за відповідальністю, `main.py` —
-тонкий entrypoint (TOKEN, PID, запуск).
+тонкий entrypoint (TOKEN, запуск).
 
 | Модуль | Відповідає за |
 |---|---|
@@ -195,22 +196,37 @@ pytest -q --cov=paradox_bot --cov-report=term-missing
 pre-commit (`pre-commit install`): ruff, mypy, `detect-private-key`,
 `check-added-large-files`.
 
-## Деплой на Replit
+## Деплой
 
-⚠️ **Тільки Reserved VM.** Бот тримає постійне gateway-з'єднання з Discord і
-**ніколи не отримує вхідних HTTP-запитів**, тому Autoscale-деплой
-(`deploymentTarget = "cloudrun"`) згортається до нуля і бот іде офлайн.
-Always-On Replit прибрав у січні 2024, тож зарезервований інстанс — єдиний
-спосіб лишатися підключеним.
+Docker на VPS (Oracle Cloud, Hetzner тощо), як і решта проєктів тут. Платформи
+застосунків на кшталт Replit Autoscale не підходять: бот тримає постійне
+gateway-з'єднання і **ніколи не отримує вхідних HTTP-запитів**, тому деплой,
+що прокидається на запит, згортається до нуля і бот іде офлайн.
 
-У Deployments оберіть **Reserved VM** і дайте Replit самому переписати
-`deploymentTarget` у `.replit` — не редагуйте це значення вручну.
+**Разово на сервері:**
 
-Змінні з `.env` задаються в розділі **Secrets**, а не файлом: `.env` у
-`.gitignore` і в деплой не потрапляє.
+```bash
+mkdir -p ~/Paradox-Discord-Bot/{data,logs} && cd ~/Paradox-Discord-Bot
+cp /шлях/до/.env .            # TOKEN та інші змінні
+```
 
-Keep-alive ендпоінт (`GET /`, `GET /health` на `PORT`) на Reserved VM для
-підтримки життя не потрібен — лишається як health-check.
+**Далі автоматично.** Мердж у `main` → CI ганяє лінт, типи, гейти й тести →
+збирає образ, сканує Trivy і пушить у GHCR з тегом `sha-<commit>` →
+`deploy.yml` копіює `docker-compose.yml` на сервер і піднімає саме той образ,
+який CI перевірив.
+
+Деплой цілиться в конкретний SHA, а не в `:latest`, і після `up -d` звіряє, що
+запущений контейнер справді має щойно завантажений digest — інакше падає.
+Невдалий `pull` теж зупиняє деплой: без цього compose тихо підняв би старий
+образ і відрапортував успіх.
+
+Потрібні секрети репозиторію: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`.
+
+**Дані.** `DATA_DIR=/app/data` монтується томом, тож `pdx_tools.db`,
+`feedback.db` і `stats.db` переживають редеплой. Ігрові бази в `databases/` —
+навпаки, read-only контент усередині образу.
+
+**Локально:** `docker compose up --build`.
 
 ## Відомі обмеження
 

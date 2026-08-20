@@ -96,6 +96,10 @@ class Settings:
     upload_cooldown_uses: int = 1
     upload_cooldown_seconds: float = 60.0
 
+    # Runtime state, unlike the read-only game databases in db_dir. Kept under
+    # data_dir so a container can mount one volume and survive a redeploy;
+    # baked into the image they would be wiped on every deploy.
+    data_dir: Path = field(default_factory=lambda: Path("."))
     upload_db_path: Path = field(default_factory=lambda: Path("pdx_tools.db"))
     feedback_db_path: Path = field(default_factory=lambda: Path("feedback.db"))
     stats_db_path: Path = field(default_factory=lambda: Path("stats.db"))
@@ -123,10 +127,16 @@ class Settings:
             os.getenv("DAILY_FACT_CHANNEL_ID", ""), name="DAILY_FACT_CHANNEL_ID"
         )
 
+        data_dir = Path(os.getenv("DATA_DIR", "."))
+
         return cls(
             token=os.getenv("TOKEN", "").strip(),
             log_channel_id=log_channel_id,
             db_dir=Path(os.getenv("DB_DIR", "databases")),
+            data_dir=data_dir,
+            upload_db_path=data_dir / "pdx_tools.db",
+            feedback_db_path=data_dir / "feedback.db",
+            stats_db_path=data_dir / "stats.db",
             bot_prefix=os.getenv("BOT_PREFIX", "-"),
             server_port=port if port is not None else 8080,
             dev_guild_id=dev_guild_id,

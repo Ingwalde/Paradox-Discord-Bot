@@ -7,4 +7,5 @@ pytest-cov>=6.0,<7.0
 # pre-commit and pip ecosystems bump both sides together.
 ruff==0.16.3
 mypy==1.20.2
+pip-audit>=2.7,<3.0
 pre-commit>=4.0,<5.0
