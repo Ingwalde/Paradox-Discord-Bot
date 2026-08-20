@@ -1,0 +1,166 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+---
+
+## [0.2.0] - 2026-08-20
+
+The bot now runs correctly as a container: it survives restarts, reports its
+health honestly, and no longer loses data when it is stopped.
+
+### Added
+- Graceful shutdown. `docker stop` sends SIGTERM and kills the process nine
+  seconds later, and deploys restart the container on every merge. `main.py`
+  now installs SIGINT/SIGTERM handlers that close the bot, so `start()`
+  returns and cleanup runs instead of the process dying where it stands —
+  possibly mid-write to SQLite. Verified by signalling a running instance:
+  the gateway closes, the health port is released, and the double `close()`
+  (signal handler plus `async with`) is absorbed idempotently.
+- `paradox_bot/storage.py`: one connection helper for the three writable
+  databases, enabling `journal_mode=WAL` with `synchronous=NORMAL`. WAL is
+  what makes an abrupt SIGKILL recoverable; the previous rollback journal was
+  not. It also applies each schema once per file per process rather than
+  running `CREATE TABLE IF NOT EXISTS` on every single write.
+- `interaction_check` on the results view: only whoever ran the search can page
+  through it. Anyone in the channel could previously advance someone else's
+  results and change the message under them.
+- `on_timeout` on the results view: the navigation buttons are disabled and the
+  message edited once the view expires. Discord does not retire components on
+  its own, so they used to keep rendering as clickable and answer "interaction
+  failed". Link buttons are left alone — they carry a url and were never
+  interactive.
+- `view_timeout_seconds` in settings, replacing a literal 300.
+- Docker: `deploy/Dockerfile` (multi-stage, non-root, security-updated base),
+  `docker-compose.yml` with a health check, and `.dockerignore`. Matches the
+  containerisation used in the other repositories here.
+- `.github/workflows/deploy.yml`: SSH deploy triggered by a successful CI run
+  on main. Deploys by `sha-<commit>` rather than `:latest`, refuses to continue
+  when the image pull fails, and verifies the running container matches the
+  pulled digest afterwards.
+- CI gained a `pip-audit` gate, `scripts/check_env_example.py`,
+  `scripts/check_version_sync.py`, and an image build scanned by Trivy.
+  Pull requests build and scan without publishing; only main pushes to GHCR.
+- `SECURITY.md` and `.gitattributes`.
+- `.github/dependabot.yml` covering pip, github-actions and pre-commit, with
+  minor and patch updates grouped into one PR.
+- `DATA_DIR` controls where the runtime SQLite files live, so a container can
+  mount one volume and keep uploads, feedback and stats across a redeploy.
+  Previously those paths were fixed relative to the working directory, which
+  would have silently wiped them on every deploy.
+
+### Changed
+- The keep-alive endpoint moved from Flask in a background thread to aiohttp in
+  the bot's own event loop. The Docker health check polls this endpoint, and a
+  separate thread kept answering 200 while the event loop was wedged — healthy
+  for a bot that had stopped responding to Discord. Sharing the loop makes an
+  unanswered request mean what the health check assumes it means.
+- Flask dropped from the dependencies. It pulled in six transitive packages
+  (werkzeug, jinja2, click, itsdangerous, markupsafe, blinker) to serve one
+  route returning a fixed string, and `aiohttp` was already a dependency for
+  the pdx.tools upload.
+- Python 3.13 in CI and in the image, up from 3.11. Verified: ruff, mypy and
+  all 79 tests pass on 3.13.
+- `ruff` and `mypy` are pinned exactly in `requirements-dev.txt`. They are also
+  pinned by rev in `.pre-commit-config.yaml`, and the two had already drifted —
+  pre-commit ran mypy 1.14.1 while CI resolved 1.20.2, so a hook could pass
+  locally and fail in CI.
+- `BOT_PREFIX` and `DATA_DIR` documented in `.env.example`; the new gate fails
+  the build if that drifts again.
+
+### Removed
+- `.replit`. The bot deploys to a VPS by container now; a request-driven
+  platform cannot host a process that holds a gateway connection and never
+  receives inbound HTTP. An intermediate step had corrected its stale
+  `replit.nix` reference and documented the Reserved VM requirement; moving to
+  containers made the whole file redundant.
+- `scripts/add_search_indexes.py`. Its expression indexes were never used:
+  the search filters with `LIKE '%query%'`, whose leading wildcard no B-tree
+  can serve. Query plans with and without them are identical (`SCAN Pages`),
+  timings match, and they added ~217 KB to `eu4.db`. See ROADMAP.md for the
+  stored-column approach that would make indexing work.
+- `write_pid()` and the `WIKI.pid` file it wrote. Nothing read it — a leftover
+  from the earlier Replit setup.
+- `IMPLEMENTATION_PROMPT.md`, superseded by this changelog and ROADMAP.md.
+
+### Fixed
+- Commands now resolve regardless of case. `-EU4` raised `CommandNotFound`,
+  which the handler swallows by design, so anything but lowercase looked like
+  a dead bot.
+- Rate limiting actually exists. `on_command_error` had a `CommandOnCooldown`
+  branch but no command carried a cooldown, so the branch was unreachable and
+  one user could stream 25 MB uploads back to back. Per-game commands,
+  `-random` and `-trending` allow 4 uses / 10 s; `-tools` allows 1 / 60 s and
+  carries `max_concurrency` so a single user cannot hold several `wait_for`
+  sessions open at once.
+- Result links can no longer overflow Discord's 1024-character embed field
+  and fail the message with 400. Unreachable with today's data (the worst
+  real query renders 737 characters) but the theoretical worst case is 1131
+  for stl and 1076 for hoi4.
+
+## [0.1.0] - 2026-08-19
+
+### Added
+- `paradox_bot/` package: the bot split out of one `main.py` into
+  `config.py` (typed `Settings` dataclass), `games.py` (`GameInfo` registry,
+  single source of truth for game key → wiki subdomain, replacing two
+  drifting dicts), `search.py`, `pdx_tools.py`, `feedback.py`, `stats.py`,
+  `bot.py`, `web.py`, and `cogs/` (`tools`, `help`, `admin`, `extras`).
+  `main.py` is now a thin entrypoint.
+- `Redirects` table is searched alongside `Pages` (was collected but never
+  read). Results ranked exact → prefix → contains, ties broken by title
+  length.
+- Fuzzy "did you mean" suggestions (`difflib`) when a search finds nothing.
+- Result pagination: ◀/▶ buttons once a search has more than one page of
+  results (was hard-capped at 7 with no way to see the rest).
+- `-random <гра>`, `-trending <гра>`.
+- ✅/❌ reactions on search results now persist votes (`Feedback` table) and
+  are queryable — previously added but with no handler at all.
+- `/admin status`, `/admin feedback` — Discord-native admin-gated
+  (`default_permissions(administrator=True)`) slash commands. First use of
+  `app_commands` in the project; regular commands stay prefix-based
+  (`message_content` intent kept on purpose — see Known limitations).
+- Optional daily "fact of the day" auto-post (`DAILY_FACT_CHANNEL_ID`,
+  `discord.ext.tasks`, 12:00 UTC).
+- Europa Universalis 5 support, plus `scripts/import_wiki.py`: populates a
+  game's database from the paradoxwikis.com MediaWiki Action API (no key
+  needed). Reusable for any future game in `GAMES`.
+- Test suite (65 tests, pytest) covering every pure function; `-tools`
+  upload tested against a real local `aiohttp` server (auth, headers, byte-
+  for-byte body). GitHub Actions CI runs ruff + mypy + pytest.
+- mypy (gradual/pragmatic config) and pre-commit (ruff, mypy,
+  `detect-private-key`, `check-added-large-files` — the class of mistake
+  that put a 12 MB save file in git once already, see 0.0.2).
+- `LICENSE` (MIT) — the project had none before.
+
+### Fixed
+- pdx.tools upload: save URL was missing the `/eu4/` game segment
+  (`/saves/{id}` → `/eu4/saves/{id}`, confirmed against
+  `https://pdx.tools/docs/api/` — the docs only document EU4), and
+  `Content-Type` was always `application/octet-stream` instead of
+  `application/zip` for zip payloads.
+- Duplicate `-tools` uploads ("save already exists") now resolve to the
+  previously-recorded link instead of surfacing pdx.tools' raw JSON error.
+
+### Changed
+- Search result field no longer repeats the top result a second time (it's
+  already the embed title); footer shows the result count.
+
+## [0.0.2] - date not recorded
+
+### Fixed
+- Command argument injection: the game key was accepted from chat and could
+  reach the database file path. Now bound by closure in
+  `register_game_commands()`, never user input.
+
+### Added
+- Real pdx.tools upload (previously a fabricated URL).
+- Repo hygiene: removed a 12 MB save file, `pdx_tools.db`, and `WIKI.pid`
+  from git; added `.env.example` and this project's first README.
+
+## [0.0.1] - date not recorded
+
+Initial working version: SQLite-backed wiki search, one command per game.
+
+[0.1.0]: https://github.com/Ingwalde/Paradox-Discord-Bot/compare/v0.0.2...v0.1.0
+[0.0.2]: https://github.com/Ingwalde/Paradox-Discord-Bot/compare/v0.0.1...v0.0.2

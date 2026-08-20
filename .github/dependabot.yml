@@ -1,0 +1,42 @@
+version: 2
+
+# Weekly dependency PRs. pip-audit would catch known CVEs in what is pinned
+# today; this is what actually moves the pins forward.
+#
+# These target main directly, unlike the deps/staging branch used in the other
+# repos here. That pattern exists to stop version churn competing with feature
+# work when there are dozens of dependencies; this project has four runtime
+# ones, so a staging branch would add a base that silently drifts out of date
+# for no benefit. Revisit if the PR volume ever becomes noise.
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine patch/minor churn; majors still arrive individually
+      # because those are the ones that need reading.
+      python-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor:
+        update-types: [minor, patch]
+
+  # Without this ecosystem Dependabot only sees requirements*.txt, and the
+  # tool versions in .pre-commit-config.yaml drift away from the ones CI
+  # installs. That already happened: pre-commit pinned mypy v1.14.1 while
+  # requirements-dev.txt resolved to 1.20.2, so a hook could pass locally and
+  # fail in CI. ruff and mypy are pinned exactly in requirements-dev.txt to
+  # keep the pairing checkable.
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

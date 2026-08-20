@@ -1,10 +1,41 @@
 [project]
-name = "python-template"
-version = "0.1.0"
-description = ""
-authors = ["Your Name <you@example.com>"]
+name = "paradox-wiki-bot"
+version = "0.2.0"
+description = "Discord bot that searches Ukrainian Paradox game wikis"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
-dependencies = []
-[tool.poetry.dependencies]
-python = "^3.11"
-flask = "^2.3.3"  # або найновіша версія
+dependencies = [
+    "discord.py>=2.4,<3.0",
+    "python-dotenv>=1.0,<2.0",
+    "aiohttp>=3.9,<4.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+# The package is not installed into the environment, and tests/ has no
+# __init__.py, so pytest puts tests/ on sys.path rather than the repo root.
+# `python -m pytest` happens to work anyway because it prepends the working
+# directory; bare `pytest`, which is what CI runs, does not. Setting this makes
+# both invocations resolve `paradox_bot` the same way.
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["paradox_bot"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.mypy]
+python_version = "3.11"
+files = ["main.py", "paradox_bot", "scripts"]
+# Pragmatic gradual-typing baseline: catch real type errors without demanding
+# full annotations everywhere yet.
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true

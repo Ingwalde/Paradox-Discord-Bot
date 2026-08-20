@@ -1,0 +1,30 @@
+name: paradox-bot
+
+services:
+  paradox-bot:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    # Deploy sets IMAGE_TAG to sha-<commit> so the server runs the exact image
+    # CI validated. Unset — local `docker compose up --build` — it falls back
+    # to :latest.
+    image: ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG:-latest}
+    container_name: paradox-wiki-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Runtime SQLite files live on the volume below, not in the image layer,
+      # so uploads/feedback/stats survive a redeploy.
+      DATA_DIR: /app/data
+    ports:
+      - "8080:8080"  # keep-alive/health, for host-side uptime monitoring
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
