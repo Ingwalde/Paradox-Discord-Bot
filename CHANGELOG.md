@@ -38,7 +38,17 @@ All notable changes to this project will be documented in this file.
 ### Removed
 - `.replit`. The bot deploys to a VPS by container now; a request-driven
   platform cannot host a process that holds a gateway connection and never
-  receives inbound HTTP.
+  receives inbound HTTP. An intermediate step had corrected its stale
+  `replit.nix` reference and documented the Reserved VM requirement; moving to
+  containers made the whole file redundant.
+- `scripts/add_search_indexes.py`. Its expression indexes were never used:
+  the search filters with `LIKE '%query%'`, whose leading wildcard no B-tree
+  can serve. Query plans with and without them are identical (`SCAN Pages`),
+  timings match, and they added ~217 KB to `eu4.db`. See ROADMAP.md for the
+  stored-column approach that would make indexing work.
+- `write_pid()` and the `WIKI.pid` file it wrote. Nothing read it — a leftover
+  from the earlier Replit setup.
+- `IMPLEMENTATION_PROMPT.md`, superseded by this changelog and ROADMAP.md.
 
 ### Fixed
 - Commands now resolve regardless of case. `-EU4` raised `CommandNotFound`,
@@ -54,22 +64,6 @@ All notable changes to this project will be documented in this file.
   and fail the message with 400. Unreachable with today's data (the worst
   real query renders 737 characters) but the theoretical worst case is 1131
   for stl and 1076 for hoi4.
-
-### Removed
-- `scripts/add_search_indexes.py`. Its expression indexes were never used:
-  the search filters with `LIKE '%query%'`, whose leading wildcard no B-tree
-  can serve. Query plans with and without them are identical (`SCAN Pages`),
-  timings match, and they added ~217 KB to `eu4.db`. See ROADMAP.md for the
-  stored-column approach that would make indexing work.
-- `write_pid()` and the `WIKI.pid` file it wrote. Nothing read it — a leftover
-  from the earlier Replit setup.
-- `IMPLEMENTATION_PROMPT.md`, superseded by this changelog and ROADMAP.md.
-
-### Changed
-- `.replit` no longer lists a `replit.nix` that does not exist; the `modules`
-  field replaces it. Documented that this bot needs a Reserved VM deployment,
-  since an Autoscale deployment scales to zero and a gateway bot never
-  receives the HTTP request that would wake it.
 
 ## [0.1.0] - 2026-08-19
 
