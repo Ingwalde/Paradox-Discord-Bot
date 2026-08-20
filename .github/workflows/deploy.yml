@@ -40,7 +40,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: docker-compose.yml
-          target: ~/Paradox-Discord-Bot/
+          target: ~/Paradox-Wiki-Bot/
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -54,7 +54,7 @@ jobs:
           envs: DEPLOY_SHA
           script: |
             set -euo pipefail
-            cd ~/Paradox-Discord-Bot
+            cd ~/Paradox-Wiki-Bot
 
             # Refuse to deploy something we cannot name. An empty DEPLOY_SHA
             # would silently fall back to :latest — the exact non-determinism
@@ -62,7 +62,7 @@ jobs:
             : "${DEPLOY_SHA:?workflow_run did not supply head_sha; refusing to deploy}"
 
             export IMAGE_TAG="sha-${DEPLOY_SHA}"
-            IMAGE="ghcr.io/ingwalde/paradox-discord-bot:${IMAGE_TAG}"
+            IMAGE="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
             echo "Deploying ${IMAGE}"
 
             # A stale credential in ~/.docker/config.json makes the daemon send

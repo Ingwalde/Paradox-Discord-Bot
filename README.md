@@ -1,6 +1,6 @@
-# Paradox Discord Bot
+# Paradox Wiki Bot
 
-[![CI](https://github.com/Ingwalde/Paradox-Discord-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Ingwalde/Paradox-Discord-Bot/actions/workflows/ci.yml)
+[![CI](https://github.com/Ingwalde/Paradox-Wiki-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/Ingwalde/Paradox-Wiki-Bot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
@@ -210,7 +210,7 @@ gateway-з'єднання і **ніколи не отримує вхідних H
 **Разово на сервері:**
 
 ```bash
-mkdir -p ~/Paradox-Discord-Bot/{data,logs} && cd ~/Paradox-Discord-Bot
+mkdir -p ~/Paradox-Wiki-Bot/{data,logs} && cd ~/Paradox-Wiki-Bot
 cp /шлях/до/.env .            # TOKEN та інші змінні
 ```
 
