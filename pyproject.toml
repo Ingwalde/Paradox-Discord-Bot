@@ -1,6 +1,6 @@
 [project]
 name = "paradox-wiki-bot"
-version = "0.2.0"
+version = "0.2.1"
 description = "Discord bot that searches Ukrainian Paradox game wikis"
 authors = [{ name = "Ingwalde" }]
 license = { file = "LICENSE" }
@@ -30,6 +30,12 @@ source = ["paradox_bot"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+# Set just under the 80% the suite actually reaches, so an accidental drop
+# fails CI while ordinary churn does not. The remaining gap is almost entirely
+# bot.py's event handlers and direct Discord API calls, which are deliberately
+# untested -- raising this number means testing those, not thinning the gap
+# with mocks.
+fail_under = 78
 
 [tool.mypy]
 python_version = "3.11"

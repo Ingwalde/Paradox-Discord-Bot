@@ -5,7 +5,7 @@
 ![Docker](https://img.shields.io/badge/docker-ghcr.io-2496ED?logo=docker&logoColor=white)
 ![discord.py](https://img.shields.io/badge/discord.py-2.x-5865F2?logo=discord&logoColor=white)
 ![mypy](https://img.shields.io/badge/mypy-checked-2A6DB2)
-![Coverage](https://img.shields.io/badge/coverage-53%25*-yellow)
+![Coverage](https://img.shields.io/badge/coverage-80%25*-brightgreen)
 [![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 Discord-бот з українським інтерфейсом для пошуку сторінок Paradox-вікі
@@ -181,21 +181,29 @@ mypy
 pytest -q --cov=paradox_bot --cov-report=term-missing
 ```
 
-103 тести проти чистих функцій (`search.py`, `pdx_tools.py`, `feedback.py`,
-`stats.py`, `config.py`, плюс `build_links_field` та ліміти команд у `bot.py`)
-і проти реального локального `aiohttp`-сервера для `-tools`-аплоаду.
-\* Coverage-бейдж (53%) — по всьому пакету; більшість Discord-специфічного
-шару (`cogs/`, `web.py`, event-хендлери в `bot.py`) свідомо не тестується
-(мокати Discord — дорого й крихко), а логіка під ним покрита на 91–100%:
+144 тести: чисті функції (`search.py`, `pdx_tools.py`, `feedback.py`,
+`stats.py`, `config.py`, `storage.py`), формат embed'ів і view, усі гілки
+команд у `cogs/`, і `-tools`-аплоад проти реального локального
+`aiohttp`-сервера (basic auth, заголовки, побайтова цілісність тіла).
+
+Команди тестуються через `.callback(cog, ctx)` з фейковими `ctx`/`interaction`
+з `tests/conftest.py`, які просто записують, що було б надіслано. Discord-клієнт,
+gateway і HTTP-шар не мокаються взагалі.
+
+\* Coverage-бейдж (80%) — по всьому пакету, з гейтом `fail_under = 78` у CI.
+Непокрите — майже виключно event-хендлери й прямі виклики Discord API в
+`bot.py`; підняти цифру означає протестувати їх, а не розріджувати розрив
+моками.
 
 | Модуль | Покриття |
 |---|---|
-| `config.py`, `feedback.py`, `games.py`, `stats.py` | 100% |
-| `search.py` | 96% |
-| `pdx_tools.py` | 91% |
-| `storage.py`, `web.py` | 100% |
+| `admin.py`, `config.py`, `games.py`, `storage.py`, `web.py` | 100% |
+| `search.py` | 97% |
+| `extras.py` | 95% |
+| `help.py`, `tools.py`, `feedback.py` | 94% |
+| `stats.py` | 90% |
+| `pdx_tools.py` | 88% |
 | `bot.py` | 43% (хелпери й view; event-хендлери й Discord-виклики — ні) |
-| `cogs/*`, `web.py` | 0% (навмисно) |
 
 pre-commit (`pre-commit install`): ruff, mypy, `detect-private-key`,
 `check-added-large-files`.
@@ -224,7 +232,12 @@ cp /шлях/до/.env .            # TOKEN та інші змінні
 Невдалий `pull` теж зупиняє деплой: без цього compose тихо підняв би старий
 образ і відрапортував успіх.
 
-Потрібні секрети репозиторію: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY`.
+**Увімкнення деплою.** Потрібні секрети репозиторію `SSH_HOST`, `SSH_USER`,
+`SSH_PRIVATE_KEY` **і** змінна `DEPLOY_ENABLED=true` (Settings → Secrets and
+variables → Actions → Variables). Без змінної джоб деплою пропускається —
+інакше він падав би на кожному пуші в `main` і слав листа про помилку
+workflow'у, який і не міг спрацювати. Змінна, а не секрет, бо в `if:` на рівні
+джоба GitHub дає лише `github`/`needs`/`vars`/`inputs`.
 
 **Дані.** `DATA_DIR=/app/data` монтується томом, тож `pdx_tools.db`,
 `feedback.db` і `stats.db` переживають редеплой. Ігрові бази в `databases/` —
