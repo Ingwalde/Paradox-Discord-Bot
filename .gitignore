@@ -127,6 +127,9 @@ pdx_tools.db
 feedback.db
 stats.db
 
+# Local agent tooling (same as the other two repos)
+.claude/
+
 # Environments
 .env
 .venv
