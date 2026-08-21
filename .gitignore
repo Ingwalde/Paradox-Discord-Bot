@@ -130,6 +130,11 @@ stats.db
 # Local agent tooling (same as the other two repos)
 .claude/
 
+# Self-hosted GitHub Actions runner, installed in-tree so nothing lives
+# outside the project directory. Contains its own credentials -- never commit.
+.runner/
+data/
+
 # Environments
 .env
 .venv

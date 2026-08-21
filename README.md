@@ -215,29 +215,66 @@ Docker на VPS (Oracle Cloud, Hetzner тощо), як і решта проєк�
 gateway-з'єднання і **ніколи не отримує вхідних HTTP-запитів**, тому деплой,
 що прокидається на запит, згортається до нуля і бот іде офлайн.
 
-**Разово на сервері:**
+Зараз бот працює **на локальній машині** через self-hosted GitHub Actions
+runner. Причина не архітектурна, а буденна: безкоштовна квота Oracle — два
+AMD-інстанси, обидва зайняті іншими проєктами. Ця схема переїжджає на VPS без
+змін у коді — достатньо перевести `deploy.yml` назад на `runs-on: ubuntu-latest`
+із scp/ssh.
+
+**Чому runner, а не SSH з Actions.** Машина за NAT, вхідне з'єднання туди
+неможливе. Runner опитує GitHub сам, тож нічого відкривати не треба.
+
+**Разово на хості:**
 
 ```bash
-mkdir -p ~/Paradox-Wiki-Bot/{data,logs} && cd ~/Paradox-Wiki-Bot
-cp /шлях/до/.env .            # TOKEN та інші змінні
+mkdir -p data logs        # у каталозі проєкту
+cp .env.example .env      # заповнити TOKEN
+```
+
+Runner ставиться в `.runner/` усередині проєкту (у `.gitignore`):
+
+```powershell
+# 1. Розпакувати actions-runner для win-x64 у .runner\
+# 2. Токен реєстрації: gh api -X POST repos/<owner>/<repo>/actions/runners/registration-token --jq .token
+cd .runner
+.\config.cmd --url https://github.com/<owner>/<repo> --token <TOKEN> `
+             --name paradox-local --labels paradox-bot --work _work
+```
+
+Автозапуск — **завдання планувальника при вході в систему**, не служба Windows:
+движок Docker Desktop живе в сесії користувача, і служба під `NETWORK SERVICE`
+до нього не достукається.
+
+```powershell
+$a = New-ScheduledTaskAction -Execute cmd.exe -Argument '/c ".runner\run.cmd"' `
+     -WorkingDirectory (Resolve-Path .runner)
+Register-ScheduledTask "ParadoxBot GitHub Runner" -Action $a `
+  -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) -Force
 ```
 
 **Далі автоматично.** Мердж у `main` → CI ганяє лінт, типи, гейти й тести →
 збирає образ, сканує Trivy і пушить у GHCR з тегом `sha-<commit>` →
-`deploy.yml` копіює `docker-compose.yml` на сервер і піднімає саме той образ,
-який CI перевірив.
+`deploy.yml` на runner'і копіює `docker-compose.yml` у `DEPLOY_DIR`, тягне саме
+той образ, який CI перевірив, і піднімає його.
 
-Деплой цілиться в конкретний SHA, а не в `:latest`, і після `up -d` звіряє, що
-запущений контейнер справді має щойно завантажений digest — інакше падає.
+Деплой цілиться в конкретний SHA, а не в `:latest`, після `up -d` звіряє, що
+запущений контейнер справді має щойно завантажений digest, і чекає, доки
+healthcheck стане `healthy` — інакше падає з останніми 50 рядками логів.
 Невдалий `pull` теж зупиняє деплой: без цього compose тихо підняв би старий
 образ і відрапортував успіх.
 
-**Увімкнення деплою.** Потрібні секрети репозиторію `SSH_HOST`, `SSH_USER`,
-`SSH_PRIVATE_KEY` **і** змінна `DEPLOY_ENABLED=true` (Settings → Secrets and
-variables → Actions → Variables). Без змінної джоб деплою пропускається —
-інакше він падав би на кожному пуші в `main` і слав листа про помилку
-workflow'у, який і не міг спрацювати. Змінна, а не секрет, бо в `if:` на рівні
-джоба GitHub дає лише `github`/`needs`/`vars`/`inputs`.
+**Увімкнення деплою.** Дві змінні репозиторію (Settings → Secrets and variables
+→ Actions → **Variables**): `DEPLOY_ENABLED=true` і `DEPLOY_DIR` — шлях до
+каталогу з `.env`, `data/` і `logs/`. Без `DEPLOY_ENABLED` джоб пропускається;
+інакше на кожному пуші в `main` він висів би в черзі без runner'а й слав листа
+про помилку. Змінні, а не секрети, бо в `if:` на рівні джоба GitHub дає лише
+`github`/`needs`/`vars`/`inputs`.
+
+**Безпека self-hosted runner'а на публічному репо.** Джоб виконується на
+особистій машині, тому замок навмисно параноїдальний: тільки успішний CI,
+тільки подія `push`, тільки гілка `main`. `workflow_run` запускається лише з
+копії workflow у default-гілці, а PR із форку не може пушити в `main` — отже
+чужий код тут виконатися не може.
 
 **Дані.** `DATA_DIR=/app/data` монтується томом, тож `pdx_tools.db`,
 `feedback.db` і `stats.db` переживають редеплой. Ігрові бази в `databases/` —

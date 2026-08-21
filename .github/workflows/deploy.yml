@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 # Two merges landing close together would otherwise start two deploys against
-# the same server. cancel-in-progress stays false on purpose: a deploy
+# the same host. cancel-in-progress stays false on purpose: a deploy
 # interrupted midway through `up -d` leaves the stack in a worse state than one
 # that waits.
 concurrency:
@@ -17,84 +17,104 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to production
-    runs-on: ubuntu-latest
-    # Skip, don't fail, when no server is configured. Without the secrets the
-    # scp step dies with "can't connect without a private SSH key or password"
-    # on every single push to main, and GitHub mails a failure notice for a
-    # workflow that was never going to work. Set SSH_HOST, SSH_USER and
-    # SSH_PRIVATE_KEY in repository secrets to turn deployment on.
+    # Self-hosted because the host sits behind NAT: the runner polls GitHub, so
+    # nothing has to reach in.
+    runs-on: [self-hosted, paradox-bot]
+
+    # This repository is public and this job runs on a personal machine, so the
+    # gate is deliberately paranoid. workflow_run only ever fires from the
+    # default branch's copy of this file, and a fork PR cannot push to main, so
+    # requiring a *successful CI run triggered by a push to main* leaves no
+    # path for someone else's code to execute here.
+    #
+    # DEPLOY_ENABLED also keeps the job from queueing forever (and then mailing
+    # a failure) on a checkout where no runner is registered.
     if: >-
       ${{ github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
           && vars.DEPLOY_ENABLED == 'true' }}
 
     permissions:
       contents: read
 
+    env:
+      # The runner wipes its own workspace between jobs, so the compose file is
+      # copied to a directory that persists and holds .env, data/ and logs/.
+      # Set the DEPLOY_DIR repository variable to the working copy on the host.
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      IMAGE_TAG: sha-${{ github.event.workflow_run.head_sha }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout the commit CI validated
         uses: actions/checkout@v7
         with:
-          # The commit CI actually validated. Without this, checkout takes
-          # whatever main points at when Deploy runs, so a second merge landing
-          # during the first deploy ships its docker-compose.yml alongside the
+          # Not whatever main points at by now: a second merge landing during
+          # this deploy would otherwise ship its compose file against the
           # earlier commit's image.
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Copy docker-compose.yml to server
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: docker-compose.yml
-          target: ~/Paradox-Wiki-Bot/
+      - name: Copy compose file into the deploy directory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:DEPLOY_DIR) {
+            throw "DEPLOY_DIR repository variable is not set (see README > Деплой)."
+          }
+          if (-not (Test-Path $env:DEPLOY_DIR)) {
+            throw "$env:DEPLOY_DIR does not exist. Create it and put .env there first (see README > Деплой)."
+          }
+          if (-not (Test-Path (Join-Path $env:DEPLOY_DIR '.env'))) {
+            throw "No .env in $env:DEPLOY_DIR. The bot cannot start without TOKEN."
+          }
+          Copy-Item docker-compose.yml $env:DEPLOY_DIR -Force
 
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.5
-        env:
-          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          command_timeout: 5m
-          envs: DEPLOY_SHA
-          script: |
-            set -euo pipefail
-            cd ~/Paradox-Wiki-Bot
+      - name: Pull and restart
+        shell: pwsh
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $image = "ghcr.io/ingwalde/paradox-wiki-bot:$env:IMAGE_TAG"
+          Write-Host "Deploying $image"
 
-            # Refuse to deploy something we cannot name. An empty DEPLOY_SHA
-            # would silently fall back to :latest — the exact non-determinism
-            # the sha- tags exist to remove.
-            : "${DEPLOY_SHA:?workflow_run did not supply head_sha; refusing to deploy}"
+          # A failed pull is NOT survivable: compose falls back to the locally
+          # cached image, the old container starts, and the health check below
+          # passes while nothing was actually deployed.
+          docker compose pull
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not pull $image. Refusing to restart -- that would relaunch the previous image and report a successful deploy for code that never shipped."
+          }
 
-            export IMAGE_TAG="sha-${DEPLOY_SHA}"
-            IMAGE="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
-            echo "Deploying ${IMAGE}"
+          docker compose up -d --remove-orphans
+          if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
 
-            # A stale credential in ~/.docker/config.json makes the daemon send
-            # an expired token instead of pulling anonymously from the public
-            # package, and the registry answers "denied". Drop it first.
-            docker logout ghcr.io || true
+      - name: Verify the running container is the image we pulled
+        shell: pwsh
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $image = "ghcr.io/ingwalde/paradox-wiki-bot:$env:IMAGE_TAG"
+          $want = docker image inspect $image --format '{{.Id}}'
+          $container = docker compose ps -q paradox-bot
+          $got = docker inspect --format '{{.Image}}' $container
+          if ($want -ne $got) {
+            throw "paradox-bot is running $got but the pulled image is $want -- a recreate must have failed."
+          }
+          Write-Host "Running image matches the pulled digest."
 
-            # A failed pull is NOT survivable: compose falls back to the locally
-            # cached image, the old container starts, and the health check below
-            # passes while nothing was actually deployed.
-            if ! docker compose pull; then
-              echo "ERROR: could not pull ${IMAGE}."
-              echo "Refusing to restart — that would relaunch the previous image"
-              echo "and report a successful deploy for code that never shipped."
-              exit 1
-            fi
-
-            docker compose up -d --remove-orphans
-
-            # Confirm the running container is the image we just pulled, not a
-            # survivor of a failed recreate.
-            want=$(docker image inspect "$IMAGE" --format '{{.Id}}')
-            got=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q paradox-bot)")
-            if [ "$want" != "$got" ]; then
-              echo "ERROR: paradox-bot is running $got but the pulled image is $want."
-              exit 1
-            fi
-            echo "Running image matches the pulled digest."
+      - name: Wait for the health check to pass
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # start_period in the compose health check is 15s; allow well past it
+          # so a slow gateway connect is not reported as a failed deploy.
+          $deadline = (Get-Date).AddSeconds(90)
+          $state = 'unknown'
+          while ((Get-Date) -lt $deadline) {
+            $state = docker inspect --format '{{.State.Health.Status}}' paradox-wiki-bot 2>$null
+            if ($state -eq 'healthy') { Write-Host "Healthy."; exit 0 }
+            if ($state -eq 'unhealthy') { break }
+            Start-Sleep -Seconds 5
+          }
+          docker logs --tail 50 paradox-wiki-bot
+          throw "Container did not become healthy within 90s (last state: $state)."
