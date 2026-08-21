@@ -54,8 +54,11 @@ jobs:
           # earlier commit's image.
           ref: ${{ github.event.workflow_run.head_sha }}
 
+      # `powershell`, not `pwsh`: the runner host has Windows PowerShell 5.1
+      # and no PowerShell 7, so `shell: pwsh` fails with "command not found".
+      # Nothing below needs 7 -- no ternaries, no `&&` chaining.
       - name: Copy compose file into the deploy directory
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not $env:DEPLOY_DIR) {
@@ -70,7 +73,7 @@ jobs:
           Copy-Item docker-compose.yml $env:DEPLOY_DIR -Force
 
       - name: Pull and restart
-        shell: pwsh
+        shell: powershell
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -89,7 +92,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
 
       - name: Verify the running container is the image we pulled
-        shell: pwsh
+        shell: powershell
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |
           $ErrorActionPreference = 'Stop'
@@ -103,7 +106,7 @@ jobs:
           Write-Host "Running image matches the pulled digest."
 
       - name: Wait for the health check to pass
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           # start_period in the compose health check is 15s; allow well past it
