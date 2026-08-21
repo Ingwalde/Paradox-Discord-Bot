@@ -45,6 +45,14 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
+
+      # arm64 is built under emulation on an amd64 runner, so buildx needs the
+      # binfmt handlers registered first. Oracle's free tier only grants two
+      # AMD micro instances, both already in use by the other bots here; a
+      # third free machine has to be Ampere (arm64), hence the second platform.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v4
 
       # Only publish from main. Pull requests build and scan the image so a
@@ -58,11 +66,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Single-platform so the result can be loaded into the local daemon for
+      # Trivy. A multi-platform build produces a manifest list, which `load`
+      # cannot handle. The layers are cached, so the multi-arch push below
+      # reuses this work for amd64 rather than repeating it.
       - name: Build image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
+          platforms: linux/amd64
           # Deploy pulls by sha- tag so the server runs the image built from the
           # commit CI validated, not whatever :latest points at by then.
           tags: |
@@ -82,12 +95,17 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      # Published as a manifest list covering both architectures, so the same
+      # sha- tag runs on an AMD micro instance and on Ampere. Trivy scanned the
+      # amd64 build above; the arm64 layers come from the same Dockerfile and
+      # the same pinned base image, so a CVE in one is a CVE in the other.
       - name: Push image
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/ingwalde/paradox-wiki-bot:latest
