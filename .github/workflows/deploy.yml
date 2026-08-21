@@ -41,7 +41,7 @@ jobs:
     env:
       # The runner wipes its own workspace between jobs, so the compose file is
       # copied to a directory that persists and holds .env, data/ and logs/.
-      # Set the DEPLOY_DIR repository variable to the working copy on the host.
+      # Set the DEPLOY_DIR repository variable to that directory.
       DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
       IMAGE_TAG: sha-${{ github.event.workflow_run.head_sha }}
 
@@ -54,63 +54,15 @@ jobs:
           # earlier commit's image.
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      # bash, not powershell: Windows PowerShell refuses to run the runner's
-      # generated .ps1 unless the execution policy is loosened, and changing a
-      # machine setting to make a deploy work is worse than writing portable
-      # scripts. These same steps run unchanged on a Linux VPS later.
-      - name: Copy compose file into the deploy directory
-        shell: bash
-        run: |
-          set -euo pipefail
-          : "${DEPLOY_DIR:?DEPLOY_DIR repository variable is not set (see README > Деплой)}"
-          [ -d "$DEPLOY_DIR" ] || { echo "::error::$DEPLOY_DIR does not exist. Create it and put .env there first."; exit 1; }
-          [ -f "$DEPLOY_DIR/.env" ] || { echo "::error::No .env in $DEPLOY_DIR. The bot cannot start without TOKEN."; exit 1; }
-          cp docker-compose.yml "$DEPLOY_DIR/"
-
-      - name: Pull and restart
-        shell: bash
-        working-directory: ${{ env.DEPLOY_DIR }}
-        run: |
-          set -euo pipefail
-          image="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
-          echo "Deploying ${image}"
-
-          # A failed pull is NOT survivable: compose falls back to the locally
-          # cached image, the old container starts, and the health check below
-          # passes while nothing was actually deployed.
-          if ! docker compose pull; then
-            echo "::error::Could not pull ${image}. Refusing to restart -- that would relaunch the previous image and report a successful deploy for code that never shipped."
-            exit 1
-          fi
-
-          docker compose up -d --remove-orphans
-
-      - name: Verify the running container is the image we pulled
-        shell: bash
-        working-directory: ${{ env.DEPLOY_DIR }}
-        run: |
-          set -euo pipefail
-          image="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
-          want=$(docker image inspect "$image" --format '{{.Id}}')
-          got=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q paradox-bot)")
-          if [ "$want" != "$got" ]; then
-            echo "::error::paradox-bot is running $got but the pulled image is $want -- a recreate must have failed."
-            exit 1
-          fi
-          echo "Running image matches the pulled digest."
-
-      - name: Wait for the health check to pass
-        shell: bash
-        run: |
-          set -uo pipefail
-          # start_period in the compose health check is 15s; allow well past it
-          # so a slow gateway connect is not reported as a failed deploy.
-          for _ in $(seq 1 18); do
-            state=$(docker inspect --format '{{.State.Health.Status}}' paradox-wiki-bot 2>/dev/null || echo unknown)
-            if [ "$state" = "healthy" ]; then echo "Healthy."; exit 0; fi
-            if [ "$state" = "unhealthy" ]; then break; fi
-            sleep 5
-          done
-          docker logs --tail 50 paradox-wiki-bot || true
-          echo "::error::Container did not become healthy within 90s (last state: ${state:-unknown})."
-          exit 1
+      # The interpreter is named outright because `shell: bash` resolves to
+      # System32\bash.exe on this host -- the WSL launcher -- which mangles
+      # Windows paths ("D:projParadox..."). Git Bash handles them. Windows
+      # PowerShell is not an option either: running the generated .ps1 needs
+      # the execution policy loosened machine-wide.
+      #
+      # The logic lives in scripts/deploy.sh so a Linux VPS runs the identical
+      # file with plain `bash scripts/deploy.sh` -- only this line is
+      # host-specific.
+      - name: Pull, restart and verify
+        shell: cmd
+        run: '"C:\Program Files\Git\bin\bash.exe" scripts/deploy.sh'
