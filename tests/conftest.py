@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
 
+import discord
 import pytest
 
 
@@ -49,6 +50,95 @@ def game_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     )
     yield db_file
     del GAMES["test"]
+
+
+class FakeMessage:
+    """Stands in for a sent discord.Message: records what it was sent with."""
+
+    def __init__(self, content: str | None, embed: object, view: object) -> None:
+        self.content = content
+        self.embed = embed
+        self.view = view
+        self.deleted = False
+        self.reactions: list[str] = []
+
+    async def delete(self) -> None:
+        self.deleted = True
+
+    async def add_reaction(self, emoji: str) -> None:
+        self.reactions.append(emoji)
+
+
+class FakeSendable(discord.abc.Messageable):
+    """Records ctx.send(...) / channel.send(...) calls instead of hitting Discord.
+
+    The cogs only ever call .send() on a context or channel, so recording that
+    one method is enough to assert on what a user would have seen -- no mocking
+    of the Discord client, gateway or HTTP layer.
+
+    Subclasses discord.abc.Messageable (a plain mixin class, not an ABC) so the
+    daily-fact loop's isinstance guard lets it through. `send` is overridden
+    outright, so none of the inherited HTTP machinery is reachable.
+    """
+
+    def __init__(self) -> None:
+        self.sent: list[FakeMessage] = []
+
+    async def send(
+        self, content: str | None = None, *, embed: object = None, view: object = None
+    ) -> FakeMessage:
+        message = FakeMessage(content, embed, view)
+        self.sent.append(message)
+        return message
+
+    @property
+    def texts(self) -> list[str]:
+        return [m.content for m in self.sent if m.content is not None]
+
+    @property
+    def embeds(self) -> list[object]:
+        return [m.embed for m in self.sent if m.embed is not None]
+
+
+class FakeAuthor:
+    def __init__(self, user_id: int = 42) -> None:
+        self.id = user_id
+
+
+class FakeContext(FakeSendable):
+    """Minimal commands.Context stand-in: .send(), .author, .channel."""
+
+    def __init__(self, user_id: int = 42) -> None:
+        super().__init__()
+        self.author = FakeAuthor(user_id)
+        self.channel = object()
+
+
+class FakeResponse:
+    """discord.InteractionResponse stand-in for the slash commands."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_message(
+        self, content: str | None = None, *, embed: object = None, ephemeral: bool = False
+    ) -> None:
+        self.sent.append({"content": content, "embed": embed, "ephemeral": ephemeral})
+
+
+class FakeInteraction:
+    def __init__(self) -> None:
+        self.response = FakeResponse()
+
+
+@pytest.fixture()
+def ctx() -> FakeContext:
+    return FakeContext()
+
+
+@pytest.fixture()
+def interaction() -> FakeInteraction:
+    return FakeInteraction()
 
 
 def insert_page(db_file: Path, title: str, url: str, image_url: str = "") -> None:

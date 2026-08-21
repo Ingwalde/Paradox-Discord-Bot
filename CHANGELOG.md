@@ -4,6 +4,49 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.2.1] - 2026-08-21
+
+Test coverage for the command layer, a gate to keep it, and an end to the
+deploy-failure emails.
+
+### Added
+- Tests for every cog — 41 new cases, coverage of `paradox_bot/cogs/` from 0%
+  to 94–100% and the suite overall from 53% to 80%. The command layer was the
+  least-tested and highest-risk part of the bot: `-tools` alone branches into
+  timeout, oversized file, unreadable attachment, API rejection, duplicate
+  save (with and without a recorded link), an unexpected error, and a
+  bookkeeping failure that must *not* hide a successful upload. Each branch is
+  now asserted on what the user actually sees.
+- `fail_under = 78` in the coverage config, so an accidental drop fails CI.
+  Just under the 80% reached today; the remaining gap is `bot.py`'s event
+  handlers and direct Discord calls, which stay untested on purpose.
+- Fakes in `tests/conftest.py` (`FakeContext`, `FakeSendable`,
+  `FakeInteraction`) that record what would have been sent. `FakeSendable`
+  subclasses `discord.abc.Messageable` — a plain mixin, not an ABC — so the
+  daily-fact loop's isinstance guard admits it. No mocking of the Discord
+  client, gateway or HTTP layer.
+
+### Fixed
+- The Deploy workflow no longer fails on every push. With no server
+  configured it died at the scp step (`can't connect without a private SSH
+  key or password`) and GitHub mailed a failure notice each time, for a
+  workflow that could not have worked. It now skips unless
+  `DEPLOY_ENABLED=true` is set as a repository variable — a variable rather
+  than a secret because job-level `if:` only sees `github`/`needs`/`vars`/
+  `inputs`. README documents the three secrets and the variable together.
+- The cog tests no longer depend on the developer's `.env`. `ExtrasCog`
+  starts its task loop when `DAILY_FACT_CHANNEL_ID` is set, which needs a
+  running event loop — so a machine with that variable configured failed
+  tests that passed in CI.
+
+### Changed
+- Dependabot targets a long-lived `deps` branch instead of main, matching the
+  other repositories here. Routine churn collects there and reaches main as
+  one deliberate merge. Two costs are documented in `dependabot.yml`: `deps`
+  drifts from main and needs a merge after any release touching a manifest,
+  and `target-branch` applies to version updates only — security updates
+  still go straight to the default branch, which is the behaviour you want.
+
 ## [0.2.0] - 2026-08-20
 
 The bot now runs correctly as a container: it survives restarts, reports its
