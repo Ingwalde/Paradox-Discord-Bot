@@ -18,7 +18,14 @@ jobs:
   deploy:
     name: Deploy to production
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Skip, don't fail, when no server is configured. Without the secrets the
+    # scp step dies with "can't connect without a private SSH key or password"
+    # on every single push to main, and GitHub mails a failure notice for a
+    # workflow that was never going to work. Set SSH_HOST, SSH_USER and
+    # SSH_PRIVATE_KEY in repository secrets to turn deployment on.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success'
+          && vars.DEPLOY_ENABLED == 'true' }}
 
     permissions:
       contents: read
