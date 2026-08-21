@@ -54,70 +54,63 @@ jobs:
           # earlier commit's image.
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      # `powershell`, not `pwsh`: the runner host has Windows PowerShell 5.1
-      # and no PowerShell 7, so `shell: pwsh` fails with "command not found".
-      # Nothing below needs 7 -- no ternaries, no `&&` chaining.
+      # bash, not powershell: Windows PowerShell refuses to run the runner's
+      # generated .ps1 unless the execution policy is loosened, and changing a
+      # machine setting to make a deploy work is worse than writing portable
+      # scripts. These same steps run unchanged on a Linux VPS later.
       - name: Copy compose file into the deploy directory
-        shell: powershell
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not $env:DEPLOY_DIR) {
-            throw "DEPLOY_DIR repository variable is not set (see README > Деплой)."
-          }
-          if (-not (Test-Path $env:DEPLOY_DIR)) {
-            throw "$env:DEPLOY_DIR does not exist. Create it and put .env there first (see README > Деплой)."
-          }
-          if (-not (Test-Path (Join-Path $env:DEPLOY_DIR '.env'))) {
-            throw "No .env in $env:DEPLOY_DIR. The bot cannot start without TOKEN."
-          }
-          Copy-Item docker-compose.yml $env:DEPLOY_DIR -Force
+          set -euo pipefail
+          : "${DEPLOY_DIR:?DEPLOY_DIR repository variable is not set (see README > Деплой)}"
+          [ -d "$DEPLOY_DIR" ] || { echo "::error::$DEPLOY_DIR does not exist. Create it and put .env there first."; exit 1; }
+          [ -f "$DEPLOY_DIR/.env" ] || { echo "::error::No .env in $DEPLOY_DIR. The bot cannot start without TOKEN."; exit 1; }
+          cp docker-compose.yml "$DEPLOY_DIR/"
 
       - name: Pull and restart
-        shell: powershell
+        shell: bash
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $image = "ghcr.io/ingwalde/paradox-wiki-bot:$env:IMAGE_TAG"
-          Write-Host "Deploying $image"
+          set -euo pipefail
+          image="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
+          echo "Deploying ${image}"
 
           # A failed pull is NOT survivable: compose falls back to the locally
           # cached image, the old container starts, and the health check below
           # passes while nothing was actually deployed.
-          docker compose pull
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not pull $image. Refusing to restart -- that would relaunch the previous image and report a successful deploy for code that never shipped."
-          }
+          if ! docker compose pull; then
+            echo "::error::Could not pull ${image}. Refusing to restart -- that would relaunch the previous image and report a successful deploy for code that never shipped."
+            exit 1
+          fi
 
           docker compose up -d --remove-orphans
-          if ($LASTEXITCODE -ne 0) { throw "docker compose up failed" }
 
       - name: Verify the running container is the image we pulled
-        shell: powershell
+        shell: bash
         working-directory: ${{ env.DEPLOY_DIR }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $image = "ghcr.io/ingwalde/paradox-wiki-bot:$env:IMAGE_TAG"
-          $want = docker image inspect $image --format '{{.Id}}'
-          $container = docker compose ps -q paradox-bot
-          $got = docker inspect --format '{{.Image}}' $container
-          if ($want -ne $got) {
-            throw "paradox-bot is running $got but the pulled image is $want -- a recreate must have failed."
-          }
-          Write-Host "Running image matches the pulled digest."
+          set -euo pipefail
+          image="ghcr.io/ingwalde/paradox-wiki-bot:${IMAGE_TAG}"
+          want=$(docker image inspect "$image" --format '{{.Id}}')
+          got=$(docker inspect --format '{{.Image}}' "$(docker compose ps -q paradox-bot)")
+          if [ "$want" != "$got" ]; then
+            echo "::error::paradox-bot is running $got but the pulled image is $want -- a recreate must have failed."
+            exit 1
+          fi
+          echo "Running image matches the pulled digest."
 
       - name: Wait for the health check to pass
-        shell: powershell
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
+          set -uo pipefail
           # start_period in the compose health check is 15s; allow well past it
           # so a slow gateway connect is not reported as a failed deploy.
-          $deadline = (Get-Date).AddSeconds(90)
-          $state = 'unknown'
-          while ((Get-Date) -lt $deadline) {
-            $state = docker inspect --format '{{.State.Health.Status}}' paradox-wiki-bot 2>$null
-            if ($state -eq 'healthy') { Write-Host "Healthy."; exit 0 }
-            if ($state -eq 'unhealthy') { break }
-            Start-Sleep -Seconds 5
-          }
-          docker logs --tail 50 paradox-wiki-bot
-          throw "Container did not become healthy within 90s (last state: $state)."
+          for _ in $(seq 1 18); do
+            state=$(docker inspect --format '{{.State.Health.Status}}' paradox-wiki-bot 2>/dev/null || echo unknown)
+            if [ "$state" = "healthy" ]; then echo "Healthy."; exit 0; fi
+            if [ "$state" = "unhealthy" ]; then break; fi
+            sleep 5
+          done
+          docker logs --tail 50 paradox-wiki-bot || true
+          echo "::error::Container did not become healthy within 90s (last state: ${state:-unknown})."
+          exit 1
